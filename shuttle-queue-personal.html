@@ -65,6 +65,7 @@ const Settings = makeIcon("⚙");
 const Palette = makeIcon("🎨");
 const Type = makeIcon("🔤");
 const Key = makeIcon("🔑");
+const CalcIcon = makeIcon("🧮");
 
 /* ---------------------------------------------------------------------- */
 /*  Design tokens                                                          */
@@ -633,6 +634,8 @@ function findLargestValidPrefix(input) {
 // salvageable at all, it reverts to whatever the last good value was.
 function MiscFormulaInput({ value, onCommit, title }) {
   const [draft, setDraft] = useState(value || "");
+  const [focused, setFocused] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
   useEffect(() => { setDraft(value || ""); }, [value]);
   const handleChange = (e) => {
     setDraft(e.target.value.replace(/[^0-9+\-*/.() ]/g, ""));
@@ -649,15 +652,86 @@ function MiscFormulaInput({ value, onCommit, title }) {
       setDraft(value || ""); // nothing salvageable — revert, don't save it
     }
   };
+  // Tapping the calculator icon shouldn't blur the input first (that would run commit() on
+  // whatever partial text is sitting there) — preventDefault on mousedown stops the input from
+  // ever losing focus in the first place, so the icon stays visible while the popup is open too.
+  const applyCalcResult = (result) => {
+    setDraft(result);
+    onCommit(result);
+    setCalcOpen(false);
+  };
   return (
-    <input
-      type="text" inputMode="text" placeholder="0" className="bq-pay-misc-input"
-      value={draft}
-      onChange={handleChange}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-      title={title}
-    />
+    <span className="bq-formula-wrap">
+      <input
+        type="text" inputMode="decimal" placeholder="0" className="bq-pay-misc-input"
+        value={draft}
+        onChange={handleChange}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { commit(); setFocused(false); }}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        title={title}
+      />
+      {focused && (
+        <button
+          type="button"
+          className="bq-calc-trigger"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setCalcOpen(true)}
+          title="Open calculator"
+          aria-label="Open calculator"
+        >
+          <CalcIcon size={13} />
+        </button>
+      )}
+      {calcOpen && <CalcPopup onResult={applyCalcResult} onClose={() => setCalcOpen(false)} />}
+    </span>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/*  Calculator popup — used by MiscFormulaInput so Misc & Total Court Fee  */
+/*  have full +, -, *, / on mobile without fighting the native keyboard    */
+/* ---------------------------------------------------------------------- */
+function CalcPopup({ onResult, onClose }) {
+  const [expr, setExpr] = useState("");
+  const press = (val) => setExpr((e) => e + val);
+  const backspace = () => setExpr((e) => e.slice(0, -1));
+  const clear = () => setExpr("");
+  const equals = () => {
+    const result = findLargestValidPrefix(expr.trim());
+    if (Number.isFinite(result)) {
+      onResult(String(Math.round(result * 100) / 100));
+    } else {
+      onClose();
+    }
+  };
+  const ROWS = [
+    ["7", "8", "9", "÷"],
+    ["4", "5", "6", "×"],
+    ["1", "2", "3", "−"],
+    ["C", "0", ".", "+"],
+  ];
+  const SYMBOL_TO_OP = { "÷": "/", "×": "*", "−": "-" };
+  return (
+    <div className="bq-calc-overlay" onClick={onClose}>
+      <div className="bq-calc" onClick={(e) => e.stopPropagation()}>
+        <div className="bq-calc-display">{expr || "0"}</div>
+        <div className="bq-calc-grid">
+          {ROWS.flat().map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`bq-calc-key ${"+−×÷".includes(k) ? "bq-calc-key-op" : ""}`}
+              onClick={() => (k === "C" ? clear() : press(SYMBOL_TO_OP[k] || k))}
+            >
+              {k}
+            </button>
+          ))}
+          <button type="button" className="bq-calc-key bq-calc-key-wide" onClick={backspace}>⌫</button>
+          <button type="button" className="bq-calc-key bq-calc-key-wide bq-calc-key-equals" onClick={equals}>=</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2381,8 +2455,20 @@ function Styles({ fontFamily }) {
       .bq-pay-table tr.bq-pay-row-idle { opacity: 0.5; }
       .bq-pay-total-cell { font-weight: 700; color: ${COLORS.accent}; }
       .bq-pay-table tfoot td { font-weight: 700; border-top: 2px solid #E7E2D3; border-bottom: none; padding-top: 10px; }
-      .bq-pay-misc-input { width: 80px; font-family: 'IBM Plex Mono'; font-size: 12px; padding: 5px 7px; border: 1px solid #DDD6C2; border-radius: 6px; background: ${COLORS.cream}; color: ${COLORS.ink}; transition: width 0.15s ease; }
+      .bq-pay-misc-input { width: 80px; font-family: 'IBM Plex Mono'; font-size: 12px; padding: 5px 22px 5px 7px; border: 1px solid #DDD6C2; border-radius: 6px; background: ${COLORS.cream}; color: ${COLORS.ink}; transition: width 0.15s ease; }
       .bq-pay-misc-input:focus { width: 180px; outline: 2px solid ${COLORS.accent}; outline-offset: 1px; }
+      .bq-formula-wrap { position: relative; display: inline-flex; align-items: center; }
+      .bq-calc-trigger { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 2px; cursor: pointer; display: flex; color: ${COLORS.muted}; }
+      .bq-calc-trigger:hover { color: ${COLORS.accent}; }
+      .bq-calc-overlay { position: fixed; inset: 0; background: rgba(10,32,24,0.5); display: flex; align-items: center; justify-content: center; z-index: 70; padding: 16px; }
+      .bq-calc { background: ${COLORS.cream}; border-radius: 16px; padding: 14px; width: 100%; max-width: 260px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+      .bq-calc-display { font-family: 'IBM Plex Mono', monospace; font-size: 22px; text-align: right; padding: 12px 10px; background: ${COLORS.card}; border: 1px solid #E7E2D3; border-radius: 10px; margin-bottom: 10px; min-height: 22px; overflow-x: auto; white-space: nowrap; color: ${COLORS.ink}; }
+      .bq-calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .bq-calc-key { font-family: ${fontFamily}; font-size: 16px; font-weight: 700; padding: 12px 0; border-radius: 10px; border: 1px solid #DDD6C2; background: ${COLORS.card}; color: ${COLORS.ink}; cursor: pointer; }
+      .bq-calc-key:active { background: ${COLORS.cream}; }
+      .bq-calc-key-op { color: ${COLORS.accent}; }
+      .bq-calc-key-wide { grid-column: span 2; }
+      .bq-calc-key-equals { background: ${COLORS.accent}; color: ${COLORS.headerText}; border-color: ${COLORS.accent}; }
 
       .bq-btn-danger { background: ${COLORS.danger}; color: ${COLORS.cream}; }
 
