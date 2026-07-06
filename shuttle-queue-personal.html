@@ -49,6 +49,7 @@ const Shuffle = makeIcon("🔀");
 const RefreshCw = makeIcon("↻");
 const ChevronUp = makeIcon("▲");
 const ChevronDown = makeIcon("▼");
+const ChevronLeft = makeIcon("‹");
 const UserPlus = makeIcon("➕");
 const Swords = makeIcon("⚔");
 const Loader2 = makeIcon("◌");
@@ -685,6 +686,7 @@ function App() {
   const [toast, setToast] = useState(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [lastResetAt, setLastResetAt] = useState(null);
+  const [sessionDateLabel, setSessionDateLabel] = useState("");
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetQueueConfirmOpen, setResetQueueConfirmOpen] = useState(false);
   const [pendingIdleMatch, setPendingIdleMatch] = useState(null); // { courtId, court } awaiting the idle-gap confirm
@@ -722,6 +724,9 @@ function App() {
       setTheme(THEMES[appearance.theme] ? appearance.theme : "green");
       setFontChoice(FONT_OPTIONS[appearance.font] ? appearance.font : "manrope");
       setFontSizeChoice(FONT_SIZES[appearance.fontSize] ? appearance.fontSize : "medium");
+      let activities = await loadKey("uc_activities", []);
+      const thisActivity = Array.isArray(activities) ? activities.find((a) => a.id === SESSION_ID) : null;
+      setSessionDateLabel(thisActivity ? thisActivity.label : new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }));
       setLastResetAt(meta.lastResetAt || null);
       setLoaded(true);
     })();
@@ -1192,7 +1197,7 @@ Respond with ONLY raw JSON, no markdown fences, no commentary, in exactly this s
     <ThemeContext.Provider value={THEMES[theme] || THEMES.green}>
     <div className="bq-root" style={rootStyle}>
       <Styles fontFamily={fontFamily} />
-      <Header playersCount={players.length} queueCount={queue.length} />
+      <Header sessionDateLabel={sessionDateLabel} />
       <TabBar tab={tab} setTab={setTab} counts={{ courts: courts.filter((c) => c.match).length, players: players.length, history: history.length }} />
 
       <main className="bq-main">
@@ -1272,22 +1277,20 @@ Respond with ONLY raw JSON, no markdown fences, no commentary, in exactly this s
 /* ---------------------------------------------------------------------- */
 /*  Header + Tabs                                                          */
 /* ---------------------------------------------------------------------- */
-function Header({ playersCount, queueCount }) {
+function Header({ sessionDateLabel }) {
   return (
     <header className="bq-header">
       <div className="bq-header-inner">
-        <a href="index.html" className="bq-back-btn" title="Back to Undercover home" aria-label="Back to Undercover home">
-          <LogOut size={16} style={{ transform: "scaleX(-1)" }} />
-        </a>
         <div className="bq-brand">
           <CircleDot size={22} strokeWidth={2.5} />
           <div><h1>Undercover Pa-queue</h1><p>Court rotation &amp; matchmaking</p></div>
         </div>
-        <div className="bq-header-stats">
-          <div className="bq-stat"><span className="bq-stat-num">{playersCount}</span><span className="bq-stat-label">roster</span></div>
-          <div className="bq-stat"><span className="bq-stat-num">{queueCount}</span><span className="bq-stat-label">waiting</span></div>
-          <div className="bq-stat bq-stat-date"><span className="bq-stat-num" style={{ fontSize: 14 }}>{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span><span className="bq-stat-label">today</span></div>
-        </div>
+      </div>
+      <div className="bq-header-subrow">
+        <a href="index.html" className="bq-back-circle" title="Back to Undercover home" aria-label="Back to Undercover home">
+          <ChevronLeft size={20} />
+        </a>
+        <span className="bq-header-date">{sessionDateLabel}</span>
       </div>
       <div className="bq-header-line" />
     </header>
@@ -1394,7 +1397,7 @@ function CourtsTab({
 
       <aside className="bq-queue-col">
         <div className="bq-section-head">
-          <h2>Player Pool</h2>
+          <h2>Player Pool <span className="bq-muted-sm">({queue.length})</span></h2>
           <div className="bq-row-gap">
             <button className="bq-btn bq-btn-ghost" onClick={() => setShowAdd((s) => !s)}><UserPlus size={15} /> Add</button>
             <button className="bq-btn bq-btn-ghost" onClick={addAllToQueue}><ListPlus size={15} /> Add all</button>
@@ -2177,15 +2180,13 @@ function Styles({ fontFamily }) {
 
       .bq-header { background: linear-gradient(160deg, ${COLORS.headerBg}, ${COLORS.headerBgDark}); color: ${COLORS.headerText}; padding: 18px 22px 16px; position: relative; }
       .bq-header-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-      .bq-back-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; color: ${COLORS.headerText}; background: rgba(255,255,255,0.08); text-decoration: none; margin-right: 2px; flex-shrink: 0; }
-      .bq-back-btn:hover { background: rgba(255,255,255,0.16); }
       .bq-brand { display: flex; align-items: center; gap: 10px; }
       .bq-brand h1 { font-family: 'Oswald', sans-serif; font-size: 22px; letter-spacing: 0.02em; margin: 0; text-transform: uppercase; }
       .bq-brand p { margin: 0; font-size: 11.5px; color: ${COLORS.shuttle}; letter-spacing: 0.03em; }
-      .bq-header-stats { display: flex; gap: 20px; }
-      .bq-stat { display: flex; flex-direction: column; align-items: flex-end; }
-      .bq-stat-num { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 600; line-height: 1; }
-      .bq-stat-label { font-size: 10px; color: rgba(246,243,234,0.6); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+      .bq-header-subrow { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+      .bq-back-circle { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,0.14); color: ${COLORS.headerText}; text-decoration: none; flex-shrink: 0; }
+      .bq-back-circle:hover { background: rgba(255,255,255,0.24); }
+      .bq-header-date { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: rgba(246,243,234,0.75); letter-spacing: 0.02em; }
       .bq-header-line { height: 3px; margin-top: 14px; background: repeating-linear-gradient(90deg, ${COLORS.shuttle} 0 18px, transparent 18px 26px); opacity: 0.85; }
 
       .bq-tabbar { display: flex; gap: 4px; background: ${COLORS.card}; padding: 8px 14px 0; border-bottom: 1px solid #E7E2D3; overflow-x: auto; -webkit-overflow-scrolling: touch; }
