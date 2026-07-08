@@ -20,7 +20,7 @@
 const { useState, useEffect } = React;
 
 /* ---------------------------------------------------------------------- */
-/*  Icon shims (same approach as shuttle-queue-personal.html — no extra    */
+/*  Icon shims (same approach as casual.html — no extra    */
 /*  JS dependency besides React itself)                                    */
 /* ---------------------------------------------------------------------- */
 function makeIcon(symbol, extraStyle) {
@@ -44,7 +44,7 @@ const Type = makeIcon("🔤");
 const Wallet = makeIcon("💰");
 
 /* ---------------------------------------------------------------------- */
-/*  Theme tokens — identical to shuttle-queue-personal.html so both pages  */
+/*  Theme tokens — identical to casual.html so both pages  */
 /*  always look like one app, not two                                     */
 /* ---------------------------------------------------------------------- */
 const THEMES = {
@@ -82,7 +82,7 @@ const MAX_SESSIONS = 100;
 
 // One-time migration: anyone who used the app before this landing page existed already has a
 // real, live session sitting under the "default" session id (see the matching migration in
-// shuttle-queue-personal.html). The very first time this page loads, if there's no Activities
+// casual.html). The very first time this page loads, if there's no Activities
 // list yet AND that old data is present, create one Activity card pointing at it — otherwise
 // that session would just be invisible, with no card to open it from.
 function migrateLegacyActivityIfNeeded() {
@@ -105,9 +105,18 @@ function getSessionSummary(sessionId) {
   return { playerCount: Array.isArray(players) ? players.length : 0, matchCount: Array.isArray(history) ? history.length : 0 };
 }
 
+// Same idea, but for a Competition session — reads keys written by tournament.html (prefixed
+// "comp_" instead of "bq_", since Competition data is intentionally kept separate from Casual).
+function getCompetitionSummary(sessionId) {
+  const participants = loadKey(sessionDataKey("comp_participants", sessionId), []);
+  const teams = loadKey(sessionDataKey("comp_teams", sessionId), []);
+  return { participantCount: Array.isArray(participants) ? participants.length : 0, teamCount: Array.isArray(teams) ? teams.length : 0 };
+}
+
 function App() {
   const [loaded, setLoaded] = useState(false);
   const [activities, setActivities] = useState([]);
+  const [competitions, setCompetitions] = useState([]);
   const [theme, setTheme] = useState("green");
   const [fontChoice, setFontChoice] = useState("manrope");
   const [fontSizeChoice, setFontSizeChoice] = useState("medium");
@@ -117,6 +126,7 @@ function App() {
   const [courtFeePerHour, setCourtFeePerHourState] = useState("");
   const [courtFeeMode, setCourtFeeMode] = useState("perGame");
   const [tab, setTab] = useState("activities");
+  const [activitiesSubTab, setActivitiesSubTab] = useState("casual"); // 'casual' | 'competitions'
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [toast, setToast] = useState(null);
@@ -124,6 +134,7 @@ function App() {
   useEffect(() => {
     const list = migrateLegacyActivityIfNeeded();
     setActivities(list);
+    setCompetitions(loadKey("uc_competitions", []));
     const appearance = loadKey("bq_appearance", { theme: "green", font: "manrope", fontSize: "medium" });
     setTheme(THEMES[appearance.theme] ? appearance.theme : "green");
     setFontChoice(FONT_OPTIONS[appearance.font] ? appearance.font : "manrope");
@@ -140,6 +151,7 @@ function App() {
   }, []);
 
   useEffect(() => { if (loaded) saveKey("uc_activities", activities); }, [activities, loaded]);
+  useEffect(() => { if (loaded) saveKey("uc_competitions", competitions); }, [competitions, loaded]);
   useEffect(() => { if (loaded) saveKey("bq_appearance", { theme, font: fontChoice, fontSize: fontSizeChoice }); }, [theme, fontChoice, fontSizeChoice, loaded]);
   useEffect(() => { if (loaded) saveKey("bq_geminiKeys", geminiKeys); }, [geminiKeys, loaded]);
   useEffect(() => { if (loaded) saveKey("bq_geminiKeyIndex", geminiKeyIndex); }, [geminiKeyIndex, loaded]);
@@ -167,7 +179,22 @@ function App() {
       return next.length > MAX_SESSIONS ? next.slice(0, MAX_SESSIONS) : next;
     });
     setAddOpen(false);
-    window.location.href = `shuttle-queue-personal.html?session=${id}`;
+    window.location.href = `casual.html?session=${id}`;
+  };
+
+  // Same idea as createCasualSession, but for Competition — a separate list, a separate page
+  // (tournament.html), and it takes a name in addition to a date since tournaments usually
+  // have a proper title ("Barangay Cup 2026") rather than just being identified by date.
+  const createCompetitionSession = (name, dateLabel) => {
+    const id = uid("comp");
+    const label = name?.trim() ? name.trim() : (dateLabel || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }));
+    const entry = { id, label, dateLabel: dateLabel || "", createdAt: Date.now(), type: "competition" };
+    setCompetitions((prev) => {
+      const next = [entry, ...prev];
+      return next.length > MAX_SESSIONS ? next.slice(0, MAX_SESSIONS) : next;
+    });
+    setAddOpen(false);
+    window.location.href = `tournament.html?session=${id}`;
   };
 
   const deleteActivity = (id) => {
@@ -176,23 +203,41 @@ function App() {
     notify("Session removed from the list.");
   };
 
+  const deleteCompetition = (id) => {
+    setCompetitions((prev) => prev.filter((c) => c.id !== id));
+    setDeleteTarget(null);
+    notify("Tournament removed from the list.");
+  };
+
   if (!loaded) return null;
 
   return (
     <div className="uc-root" style={{ fontFamily, fontSize: `${14 * fontScale}px` }}>
       <UndercoverStyles colors={COLORS} fontFamily={fontFamily} />
       <header className="uc-header">
-        <div className="uc-header-inner">
-          <div className="uc-brand"><CircleDot size={22} /><h1>Undercover</h1></div>
+        <img src="undercover-banner-bg.png" alt="" aria-hidden="true" className="uc-banner-bg" />
+        <img src="undercover-banner-fg.png" alt="Undercover Badminton Club" className="uc-banner-fg" />
+      </header>
+
+      <main className="uc-main">
+        <div className="uc-section-title-row">
+          <h2 className="uc-section-title">{tab === "settings" ? "Settings" : "Activities"}</h2>
           <button className={`uc-tab-icon ${tab === "settings" ? "uc-tab-icon-active" : ""}`} onClick={() => setTab(tab === "settings" ? "activities" : "settings")} title="Settings" aria-label="Settings">
             <Settings size={18} />
           </button>
         </div>
-      </header>
-
-      <main className="uc-main">
         {tab === "activities" ? (
-          <ActivitiesTab activities={activities} onOpen={(id) => window.location.href = `shuttle-queue-personal.html?session=${id}`} onDelete={setDeleteTarget} />
+          <>
+            <div className="uc-subtab-row">
+              <button className={`uc-subtab ${activitiesSubTab === "casual" ? "uc-subtab-active" : ""}`} onClick={() => setActivitiesSubTab("casual")}>Casual</button>
+              <button className={`uc-subtab ${activitiesSubTab === "competitions" ? "uc-subtab-active" : ""}`} onClick={() => setActivitiesSubTab("competitions")}>Tournaments</button>
+            </div>
+            {activitiesSubTab === "casual" ? (
+              <ActivitiesTab activities={activities} onOpen={(id) => window.location.href = `casual.html?session=${id}`} onDelete={(a) => setDeleteTarget({ ...a, _kind: "activity" })} />
+            ) : (
+              <CompetitionsTab competitions={competitions} onOpen={(id) => window.location.href = `tournament.html?session=${id}`} onDelete={(c) => setDeleteTarget({ ...c, _kind: "competition" })} />
+            )}
+          </>
         ) : (
           <SettingsTab
             theme={theme} setTheme={setTheme}
@@ -211,12 +256,12 @@ function App() {
         <button className="uc-fab" onClick={() => setAddOpen(true)} aria-label="New activity"><Plus size={22} /></button>
       )}
 
-      {addOpen && <NewActivityModal onClose={() => setAddOpen(false)} onCreateCasual={createCasualSession} />}
+      {addOpen && <NewActivityModal onClose={() => setAddOpen(false)} onCreateCasual={createCasualSession} onCreateCompetition={createCompetitionSession} />}
       {deleteTarget && (
         <ConfirmDeleteModal
           activity={deleteTarget}
           onClose={() => setDeleteTarget(null)}
-          onConfirm={() => deleteActivity(deleteTarget.id)}
+          onConfirm={() => (deleteTarget._kind === "competition" ? deleteCompetition(deleteTarget.id) : deleteActivity(deleteTarget.id))}
         />
       )}
       {toast && <div className="uc-toast">{toast}</div>}
@@ -230,7 +275,6 @@ function App() {
 function ActivitiesTab({ activities, onOpen, onDelete }) {
   return (
     <div className="uc-activities">
-      <h2>Activities</h2>
       {activities.length === 0 ? (
         <p className="uc-empty">No sessions yet. Tap + to start your first game day.</p>
       ) : (
@@ -265,11 +309,53 @@ function ActivitiesTab({ activities, onOpen, onDelete }) {
 }
 
 /* ---------------------------------------------------------------------- */
+/*  Competitions section — same list/card pattern as Activities, kept as   */
+/*  its own component since it reads a separate list and separate summary  */
+/* ---------------------------------------------------------------------- */
+function CompetitionsTab({ competitions, onOpen, onDelete }) {
+  return (
+    <div className="uc-activities">
+      {competitions.length === 0 ? (
+        <p className="uc-empty">No tournaments yet. Tap + and choose Tournament to set one up.</p>
+      ) : (
+        <div className="uc-activity-list">
+          {competitions.map((c) => {
+            const summary = getCompetitionSummary(c.id);
+            return (
+              <div key={c.id} className="uc-activity-card" onClick={() => onOpen(c.id)}>
+                <div className="uc-activity-main">
+                  <div className="uc-activity-label">{c.label}</div>
+                  <div className="uc-activity-meta">
+                    <span><Users size={12} /> {summary.participantCount} players</span>
+                    <span><Users size={12} /> {summary.teamCount} teams</span>
+                  </div>
+                </div>
+                <button
+                  className="uc-icon-btn"
+                  onClick={(e) => { e.stopPropagation(); onDelete(c); }}
+                  aria-label={`Delete ${c.label}`}
+                  title="Delete this tournament"
+                >
+                  <Trash2 size={14} />
+                </button>
+                <ChevronRight size={18} style={{ opacity: 0.4 }} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /*  New-activity modal                                                     */
 /* ---------------------------------------------------------------------- */
-function NewActivityModal({ onClose, onCreateCasual }) {
-  const [step, setStep] = useState("choose"); // 'choose' | 'casualDate'
+function NewActivityModal({ onClose, onCreateCasual, onCreateCompetition }) {
+  const [step, setStep] = useState("choose"); // 'choose' | 'casualDate' | 'competitionDetails'
   const [dateInput, setDateInput] = useState("");
+  const [compName, setCompName] = useState("");
+  const [compDateInput, setCompDateInput] = useState("");
 
   return (
     <div className="uc-modal-overlay" onClick={onClose}>
@@ -285,12 +371,12 @@ function NewActivityModal({ onClose, onCreateCasual }) {
                 <span className="uc-choice-title">Casual</span>
                 <span className="uc-choice-sub">A regular game-day session — courts, queue, matchmaking, Bills.</span>
               </button>
-              <button className="uc-choice uc-choice-disabled" disabled title="Not yet released">
-                <span className="uc-choice-title">Competition</span>
-                <span className="uc-choice-sub">Not yet released.</span>
+              <button className="uc-choice" onClick={() => setStep("competitionDetails")}>
+                <span className="uc-choice-title">Tournament</span>
+                <span className="uc-choice-sub">Men's/Women's/Mixed doubles, Round Robin &amp; Bracket, Registration fee.</span>
               </button>
             </div>
-          ) : (
+          ) : step === "casualDate" ? (
             <>
               <label className="uc-field">
                 <span>Target date</span>
@@ -303,6 +389,26 @@ function NewActivityModal({ onClose, onCreateCasual }) {
                   onClick={() => onCreateCasual(dateInput ? new Date(dateInput + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "")}
                 >
                   Create session
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="uc-field">
+                <span>Tournament name</span>
+                <input type="text" className="uc-input" placeholder="e.g. Barangay Cup 2026" value={compName} onChange={(e) => setCompName(e.target.value)} />
+              </label>
+              <label className="uc-field">
+                <span>Target date</span>
+                <input type="date" className="uc-input" value={compDateInput} onChange={(e) => setCompDateInput(e.target.value)} />
+              </label>
+              <div className="uc-modal-actions">
+                <button className="uc-btn uc-btn-ghost" onClick={() => setStep("choose")}>Back</button>
+                <button
+                  className="uc-btn uc-btn-primary"
+                  onClick={() => onCreateCompetition(compName, compDateInput ? new Date(compDateInput + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "")}
+                >
+                  Create competition
                 </button>
               </div>
             </>
@@ -400,13 +506,18 @@ function UndercoverStyles({ colors, fontFamily }) {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
       .uc-root { min-height: 100vh; background: ${COLORS.cream}; color: ${COLORS.ink}; display: flex; flex-direction: column; }
-      .uc-header { background: ${COLORS.headerBg}; padding: 16px 18px; }
-      .uc-header-inner { display: flex; align-items: center; justify-content: space-between; max-width: 720px; margin: 0 auto; }
-      .uc-brand { display: flex; align-items: center; gap: 10px; color: ${COLORS.headerText}; }
-      .uc-brand h1 { font-family: 'Oswald', sans-serif; font-size: 20px; text-transform: uppercase; letter-spacing: 0.03em; margin: 0; }
-      .uc-tab-icon { background: rgba(255,255,255,0.08); border: none; color: ${COLORS.headerText}; width: 34px; height: 34px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-      .uc-tab-icon-active { background: rgba(255,255,255,0.2); }
+      .uc-header { background: #000000; padding: 0; overflow: hidden; position: relative; height: auto; max-height: 220px; object-fit: contain; }
+      .uc-banner-bg { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 220px; object-fit: cover; }
+      .uc-banner-fg { position: relative; display: block; width: 100%; height: auto; max-height: 220px; object-fit: contain; object-position: center center; margin: 0 auto; }
+      .uc-tab-icon { background: rgba(0,0,0,0.08); border: none; color: ${COLORS.accent}; width: 34px; height: 34px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+      .uc-tab-icon-active { background: rgba(0,0,0,0.16); }
+      .uc-section-title-row { position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+      .uc-section-title-row .uc-tab-icon { position: absolute; right: 0; }
+      .uc-section-title { font-family: 'Oswald'; font-size: 18px; text-transform: uppercase; color: ${COLORS.accent}; margin: 0; text-align: center; }
       .uc-main { flex: 1; max-width: 720px; width: 100%; margin: 0 auto; padding: 20px 18px 100px; box-sizing: border-box; }
+      .uc-subtab-row { display: flex; gap: 8px; margin-bottom: 18px; }
+      .uc-subtab { flex: 1; padding: 10px 0; border: 1px solid rgba(0,0,0,0.1); background: ${COLORS.card}; color: ${COLORS.muted}; font-family: ${fontFamily}; font-weight: 700; font-size: 13px; border-radius: 10px; cursor: pointer; }
+      .uc-subtab-active { background: ${COLORS.accent}; color: ${COLORS.headerText}; border-color: ${COLORS.accent}; }
       .uc-activities h2 { font-family: 'Oswald'; font-size: 16px; text-transform: uppercase; color: ${COLORS.accent}; margin: 0 0 14px; }
       .uc-empty { color: ${COLORS.muted}; font-size: 13.5px; padding: 30px 0; text-align: center; }
       .uc-activity-list { display: flex; flex-direction: column; gap: 10px; }
